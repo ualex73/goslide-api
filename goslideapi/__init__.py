@@ -1,2 +1,2 @@
-from .goslideapi import *
-name = 'goslideapi'
+"""Init for Go Slide API."""
+from .goslideapi import GoSlideCloud

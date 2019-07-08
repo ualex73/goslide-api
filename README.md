@@ -43,7 +43,7 @@ else:
     print('login failed')
 ```
 
-## TODO:
+## TODO
 
 - Test with a real slide (awaiting delivery ;-))
 - Expose more API functions
