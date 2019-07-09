@@ -41,7 +41,7 @@ class GoSlideCloud:
         #       which isn't in our account
         # 404 - Can't find API endpoint
         # 424 - If one or multiple Slides are offline. The 'device_info'
-        #       will contain '500 Device unavailable' for those slides
+        #       will contain code=500, 'Device unavailable' for those slides
         # aiohttp.client_exceptions.ClientConnectorError: No IP, timeout
 
         async with aiohttp.request(reqtype,
@@ -128,6 +128,8 @@ class GoSlideCloud:
             if 'access_token' in result:
                 self._authenticated = True
                 self._accesstoken = result['access_token']
+
+                # Token format is in UTC
                 if 'expires_at' in result:
                     self._expiretoken = \
                         datetime.strptime(result['expires_at'] + ' +0000',
@@ -173,7 +175,23 @@ class GoSlideCloud:
         #       },
         #       "routines": [],
         #     },
-        #     {...},
+        #     {
+        #       "id": 2,
+        #       "device_name": "Study Room",
+        #       "slide_setup": "middle",
+        #       "curtain_type": "rail",
+        #       "device_id": "slide_300000000001",
+        #       "household_id": 1,
+        #       "zone_id": 2,
+        #       "touch_go": false,
+        #       "device_info": {
+        #         "message": "No response from device.",
+        #         "code": 500
+        #       },
+        #       "routines": {
+        #         "message": "No response from device.",
+        #         "code": 500
+        #     },
         #     {...},
         #   ]
         # }
