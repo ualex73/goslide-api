@@ -94,10 +94,10 @@ class GoSlideCloud:
     async def _checkauth(self):
         """Check if we are authenticated."""
         if self._authenticated:
-            from datetime import datetime
+            from datetime import datetime, timezone
 
             if self._expiretoken is not None:
-                diff = self._expiretoken - datetime.now(datetime.timezone.utc)
+                diff = self._expiretoken - datetime.now(timezone.utc)
 
                 # Reauthenticate if token is less then 7 days valid
                 if diff.days <= 7:
@@ -195,7 +195,7 @@ class GoSlideCloud:
         #     {...},
         #   ]
         # }
-        if not self._checkauth:
+        if not await self._checkauth():
             return None
 
         result = await self._request('GET', 'slides/overview')
@@ -222,7 +222,7 @@ class GoSlideCloud:
         #   },
         #   "error": null
         # }
-        if not self._checkauth:
+        if not await self._checkauth():
             return None
 
         result = await self._request('GET', 'slide/{}/info'.format(slideid))
@@ -256,7 +256,7 @@ class GoSlideCloud:
                           pos)
             return False
 
-        if not self._checkauth:
+        if not await self._checkauth():
             return False
 
         resp = await self._request('POST',
@@ -266,7 +266,7 @@ class GoSlideCloud:
 
     async def slideopen(self, slideid):
         """Open a slide."""
-        if not self._checkauth:
+        if not await self._checkauth():
             return False
 
         resp = await self._request('POST',
@@ -276,7 +276,7 @@ class GoSlideCloud:
 
     async def slideclose(self, slideid):
         """Close a slide."""
-        if not self._checkauth:
+        if not await self._checkauth():
             return False
 
         resp = await self._request('POST',
@@ -286,7 +286,7 @@ class GoSlideCloud:
 
     async def slidestop(self, slideid):
         """Stop a slide."""
-        if not self._checkauth:
+        if not await self._checkauth():
             return False
 
         resp = await self._request('POST',
@@ -295,7 +295,7 @@ class GoSlideCloud:
 
     async def slidecalibrate(self, slideid):
         """Calibrate a slide."""
-        if not self._checkauth:
+        if not await self._checkauth():
             return False
 
         resp = await self._request('POST',
@@ -304,7 +304,7 @@ class GoSlideCloud:
 
     async def householdget(self):
         """Return household information."""
-        if not self._checkauth:
+        if not await self._checkauth():
             return False
 
         resp = await self._request('GET', 'households')
@@ -312,7 +312,7 @@ class GoSlideCloud:
 
     async def householdset(self, name, address, lat, lon):
         """Set household information."""
-        if not self._checkauth:
+        if not await self._checkauth():
             return False
 
         resp = await self._request('PATCH', 'households',
