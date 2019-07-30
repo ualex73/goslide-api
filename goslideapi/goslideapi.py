@@ -7,16 +7,15 @@ import aiohttp
 _LOGGER = logging.getLogger(__name__)
 
 # API Link: https://documenter.getpostman.com/view/6223391/S1Lu2pSf
-BASEURL = 'https://api.goslide.io/api/{}'
-
 
 class GoSlideCloud:
     """API Wrapper for the Go Slide devices."""
 
-    def __init__(self, username, password):
+    def __init__(self, username, password, apiurl = 'https://api.goslide.io/api/{}'):
         """Create the object with required parameters."""
         self._username = username
         self._password = password
+        self._apiurl = apiurl
         self._authenticated = False
         self._accesstoken = ''
         self._authfailed = False
@@ -33,7 +32,7 @@ class GoSlideCloud:
             headers['Authorization'] = 'Bearer {}'.format(self._accesstoken)
 
         _LOGGER.debug("REQ: API=%s, type=%s, data=%s",
-                      BASEURL.format(urlsuffix), reqtype, json.dumps(data))
+                      self._apiurl.format(urlsuffix), reqtype, json.dumps(data))
 
         # Known error codes from the Cloud API:
         # 401 - Authentication failed
@@ -45,20 +44,20 @@ class GoSlideCloud:
         # aiohttp.client_exceptions.ClientConnectorError: No IP, timeout
 
         async with aiohttp.request(reqtype,
-                                   BASEURL.format(urlsuffix),
+                                   self._apiurl.format(urlsuffix),
                                    headers=headers,
                                    json=data) as resp:
             if resp.status in [200, 424]:
                 textdata = await resp.text()
                 _LOGGER.debug("RES: API=%s, type=%s, HTTPCode=%s, Data=%s",
-                              BASEURL.format(urlsuffix), reqtype,
+                              self._apiurl.format(urlsuffix), reqtype,
                               resp.status, textdata)
 
                 try:
                     jsondata = json.loads(textdata)
                 except json.decoder.JSONDecodeError:
                     _LOGGER.error("RES: API=%s, type=%s, INVALID JSON=%s",
-                                  BASEURL.format(urlsuffix), reqtype,
+                                  self._apiurl.format(urlsuffix), reqtype,
                                   textdata)
                     jsondata = None
 
@@ -66,7 +65,7 @@ class GoSlideCloud:
             else:
                 textdata = await resp.text()
                 _LOGGER.error("RES: API=%s, type=%s, HTTPCode=%s, Data=%s",
-                              BASEURL.format(urlsuffix), reqtype,
+                              self._apiurl.format(urlsuffix), reqtype,
                               resp.status, textdata)
 
                 if resp.status == 401:
@@ -87,7 +86,7 @@ class GoSlideCloud:
                 resp = await self._dorequest(reqtype, urlsuffix, data)
                 if self._authfailed:
                     _LOGGER.error("Failed request. API=%s",
-                                  BASEURL.format(urlsuffix))
+                                  self._apiurl.format(urlsuffix))
 
         return resp
 
