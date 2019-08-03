@@ -8,15 +8,17 @@ _LOGGER = logging.getLogger(__name__)
 
 # API Link: https://documenter.getpostman.com/view/6223391/S1Lu2pSf
 BASEURL = 'https://api.goslide.io/api/{}'
+DEFAULT_TIMEOUT = 30
 
 
 class GoSlideCloud:
     """API Wrapper for the Go Slide devices."""
 
-    def __init__(self, username, password):
+    def __init__(self, username, password, timeout=DEFAULT_TIMEOUT):
         """Create the object with required parameters."""
         self._username = username
         self._password = password
+        self._timeout = timeout
         self._authenticated = False
         self._accesstoken = ''
         self._authfailed = False
@@ -35,6 +37,9 @@ class GoSlideCloud:
         _LOGGER.debug("REQ: API=%s, type=%s, data=%s",
                       BASEURL.format(urlsuffix), reqtype, json.dumps(data))
 
+        # Set a reasonable timeout, otherwise it can take > 300 seconds
+        atimeout = aiohttp.ClientTimeout(total=self._timeout)
+
         # Known error codes from the Cloud API:
         # 401 - Authentication failed
         # 403 - Forbidden, most likely we want to control a slide
@@ -47,7 +52,8 @@ class GoSlideCloud:
         async with aiohttp.request(reqtype,
                                    BASEURL.format(urlsuffix),
                                    headers=headers,
-                                   json=data) as resp:
+                                   json=data,
+                                   timeout=atimeout) as resp:
             if resp.status in [200, 424]:
                 textdata = await resp.text()
                 _LOGGER.debug("RES: API=%s, type=%s, HTTPCode=%s, Data=%s",

@@ -9,7 +9,7 @@ with open('README.md') as f:
 
 setuptools.setup(
     name='goslide-api',
-    version='0.2.0',
+    version='0.2.1',
     url='https://github.com/ualex73/goslide-api',
     license='Apache License 2.0',
     author='Alexander Kuiper',
