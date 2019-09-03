@@ -9,7 +9,7 @@ with open('README.md') as f:
 
 setuptools.setup(
     name='goslide-api',
-    version='0.2.2',
+    version='0.5.1',
     url='https://github.com/ualex73/goslide-api',
     license='Apache License 2.0',
     author='Alexander Kuiper',
@@ -20,7 +20,9 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=['aiohttp', 'asyncio'],
     classifiers=[
-        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
     ],

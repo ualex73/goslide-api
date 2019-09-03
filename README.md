@@ -20,7 +20,7 @@ login = loop.run_until_complete(goslide.login())
 if login:
 
     # Get the slide list
-    slides = loop.run_until_complete(goslide.slidesoverview())
+    slides = loop.run_until_complete(goslide.slides_overview())
     if slides:
         for slidedev in slides:
             print(slidedev['device_id'], slidedev['device_name'])
@@ -29,14 +29,14 @@ if login:
       print('Something went wrong while retrieving the slide information')
 
     # Open slide with id 1
-    result = loop.run_until_complete(goslide.slideopen(1))  
+    result = loop.run_until_complete(goslide.slide_open(1))
     if result:
         print('Succesfully opened slide 1')
     else:
         print('Failed opened slide 1')
 
     # Close slide with id 1
-    result = loop.run_until_complete(goslide.slideclose(1))
+    result = loop.run_until_complete(goslide.slide_close(1))
 
     loop.run_until_complete(goslide.logout())
 else:
@@ -45,7 +45,6 @@ else:
 
 ## TODO
 
-- Test with a real slide (awaiting delivery ;-))
 - Expose more API functions
 
 ## License

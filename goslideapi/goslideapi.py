@@ -2,41 +2,71 @@
 
 import json
 import logging
+import asyncio
 import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
 
 # API Link: https://documenter.getpostman.com/view/6223391/S1Lu2pSf
-BASEURL = 'https://api.goslide.io/api/{}'
-DEFAULT_TIMEOUT = 30
+BASEURL = "https://api.goslide.io/api/{}"
+DEFAULT_TIMEOUT = 10
+
+
+class AuthenticationFailed(Exception):
+    """Error to indicate that authentication with Slide API has failed."""
+
+    pass
+
+
+class ClientConnectionError(Exception):
+    """Error to indicate to connection issues with the Slide API."""
+
+    pass
+
+
+class ClientTimeoutError(Exception):
+    """Error to indicate to timeout issues with the Slide API."""
+
+    pass
 
 
 class GoSlideCloud:
     """API Wrapper for the Go Slide devices."""
 
-    def __init__(self, username, password, timeout=DEFAULT_TIMEOUT, url=BASEURL):
+    def __init__(
+        self,
+        username,
+        password,
+        timeout=DEFAULT_TIMEOUT,
+        url=BASEURL,
+        authexception=True,
+    ):
         """Create the object with required parameters."""
         self._username = username
         self._password = password
         self._timeout = timeout
         self._url = url
         self._authenticated = False
-        self._accesstoken = ''
+        self._accesstoken = ""
         self._authfailed = False
         self._expiretoken = None
+        self._authexception = authexception
 
     async def _dorequest(self, reqtype, urlsuffix, data=None):
         """HTTPS request handler."""
-        headers = {'Content-Type': 'application/json',
-                   'Accept': 'application/json'}
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
 
         self._authfailed = False
 
         if self._authenticated:
-            headers['Authorization'] = 'Bearer {}'.format(self._accesstoken)
+            headers["Authorization"] = "Bearer {}".format(self._accesstoken)
 
-        _LOGGER.debug("REQ: API=%s, type=%s, data=%s",
-                      self._url.format(urlsuffix), reqtype, json.dumps(data))
+        _LOGGER.debug(
+            "REQ: API=%s, type=%s, data=%s",
+            self._url.format(urlsuffix),
+            reqtype,
+            json.dumps(data),
+        )
 
         # Set a reasonable timeout, otherwise it can take > 300 seconds
         atimeout = aiohttp.ClientTimeout(total=self._timeout)
@@ -50,51 +80,74 @@ class GoSlideCloud:
         #       will contain code=500, 'Device unavailable' for those slides
         # aiohttp.client_exceptions.ClientConnectorError: No IP, timeout
 
-        async with aiohttp.request(reqtype,
-                                   self._url.format(urlsuffix),
-                                   headers=headers,
-                                   json=data,
-                                   timeout=atimeout) as resp:
-            if resp.status in [200, 424]:
-                textdata = await resp.text()
-                _LOGGER.debug("RES: API=%s, type=%s, HTTPCode=%s, Data=%s",
-                              self._url.format(urlsuffix), reqtype,
-                              resp.status, textdata)
+        try:
+            async with aiohttp.request(
+                reqtype,
+                self._url.format(urlsuffix),
+                headers=headers,
+                json=data,
+                timeout=atimeout,
+            ) as resp:
+                if resp.status in [200, 424]:
+                    textdata = await resp.text()
+                    _LOGGER.debug(
+                        "RES: API=%s, type=%s, HTTPCode=%s, Data=%s",
+                        self._url.format(urlsuffix),
+                        reqtype,
+                        resp.status,
+                        textdata,
+                    )
 
-                try:
-                    jsondata = json.loads(textdata)
-                except json.decoder.JSONDecodeError:
-                    _LOGGER.error("RES: API=%s, type=%s, INVALID JSON=%s",
-                                  self._url.format(urlsuffix), reqtype,
-                                  textdata)
-                    jsondata = None
+                    try:
+                        jsondata = json.loads(textdata)
+                    except json.decoder.JSONDecodeError:
+                        _LOGGER.error(
+                            "RES: API=%s, type=%s, INVALID JSON=%s",
+                            self._url.format(urlsuffix),
+                            reqtype,
+                            textdata,
+                        )
+                        jsondata = None
 
-                return jsondata
-            else:
-                textdata = await resp.text()
-                _LOGGER.error("RES: API=%s, type=%s, HTTPCode=%s, Data=%s",
-                              self._url.format(urlsuffix), reqtype,
-                              resp.status, textdata)
+                    return jsondata
+                else:
+                    textdata = await resp.text()
+                    _LOGGER.error(
+                        "RES: API=%s, type=%s, HTTPCode=%s, Data=%s",
+                        self._url.format(urlsuffix),
+                        reqtype,
+                        resp.status,
+                        textdata,
+                    )
 
-                if resp.status == 401:
-                    self._authfailed = True
+                    if resp.status == 401:
+                        # Raise exception, normally used by Home Assistant
+                        if self._authexception:
+                            raise AuthenticationFailed
 
-                return None
+                        self._authfailed = True
+
+                    return None
+        except (
+            aiohttp.client_exceptions.ClientConnectionError,
+            aiohttp.client_exceptions.ClientConnectorError,
+        ) as err:
+            raise ClientConnectionError(str(err))
+        except asyncio.TimeoutError as err:
+            raise ClientTimeoutError("Connection Timeout")
 
     async def _request(self, reqtype, urlsuffix, data=None):
         """Retry authentication around dorequest."""
         resp = await self._dorequest(reqtype, urlsuffix, data)
 
         if self._authfailed:
-            _LOGGER.warning("Retrying request, because authentication "
-                            "failed")
+            _LOGGER.warning("Retrying request, because authentication " "failed")
 
             resp = None
             if await self.login():
                 resp = await self._dorequest(reqtype, urlsuffix, data)
                 if self._authfailed:
-                    _LOGGER.error("Failed request. API=%s",
-                                  self._url.format(urlsuffix))
+                    _LOGGER.error("Failed request. API=%s", self._url.format(urlsuffix))
 
         return resp
 
@@ -108,12 +161,13 @@ class GoSlideCloud:
 
                 # Reauthenticate if token is less then 7 days valid
                 if diff.days <= 7:
-                    _LOGGER.info("Authentication token will expire in %s "
-                                 "days, renewing it", int(diff.days))
+                    _LOGGER.info(
+                        "Authentication token will expire in %s " "days, renewing it",
+                        int(diff.days),
+                    )
                     return await self.login()
 
-                _LOGGER.debug("Authentication token valid for %s days",
-                              int(diff.days))
+                _LOGGER.debug("Authentication token valid for %s days", int(diff.days))
 
             return True
 
@@ -124,29 +178,31 @@ class GoSlideCloud:
         from datetime import datetime
 
         self._authenticated = False
-        self._accesstoken = ''
+        self._accesstoken = ""
 
         # Call dorequest, because if auth fails, it won't work second time.
-        result = await self._dorequest('POST',
-                                       'auth/login',
-                                       {'email': self._username,
-                                        'password': self._password})
+        result = await self._dorequest(
+            "POST", "auth/login", {"email": self._username, "password": self._password}
+        )
         if result:
-            if 'access_token' in result:
+            if "access_token" in result:
                 self._authenticated = True
-                self._accesstoken = result['access_token']
+                self._accesstoken = result["access_token"]
 
                 # Token format is in UTC
-                if 'expires_at' in result:
-                    self._expiretoken = \
-                        datetime.strptime(result['expires_at'] + ' +0000',
-                                          '%Y-%m-%d %H:%M:%S %z')
-                    _LOGGER.debug("Authentication token expiry: %s",
-                                  result['expires_at'])
+                if "expires_at" in result:
+                    self._expiretoken = datetime.strptime(
+                        result["expires_at"] + " +0000", "%Y-%m-%d %H:%M:%S %z"
+                    )
+                    _LOGGER.debug(
+                        "Authentication token expiry: %s", result["expires_at"]
+                    )
                 else:
                     self._expiretoken = None
-                    _LOGGER.error("Auth login JSON is missing the "
-                                  "'expires_at' field in %s", result)
+                    _LOGGER.error(
+                        "Auth login JSON is missing the " "'expires_at' field in %s",
+                        result,
+                    )
 
         return self._authenticated
 
@@ -156,15 +212,15 @@ class GoSlideCloud:
 
         if self._authenticated:
             # Call dorequest, because we don't want retry
-            resp = await self._dorequest('POST', 'auth/logout')
+            resp = await self._dorequest("POST", "auth/logout")
             resp = bool(resp)
 
         self._authenticated = False
-        self._accesstoken = ''
+        self._accesstoken = ""
 
         return resp
 
-    async def slidesoverview(self):
+    async def slides_overview(self):
         """Retrieve the slides overview list."""
         # {
         #   "slides": [
@@ -205,14 +261,14 @@ class GoSlideCloud:
         if not await self._checkauth():
             return None
 
-        result = await self._request('GET', 'slides/overview')
-        if result and 'slides' in result:
-            return result['slides']
+        result = await self._request("GET", "slides/overview")
+        if result and "slides" in result:
+            return result["slides"]
 
         _LOGGER.error("Missing key 'slides' in JSON=%s", json.dumps(result))
         return None
 
-    async def slideinfo(self, slideid):
+    async def slide_info(self, slideid):
         """Retrieve the slide info."""
         # The format is:
         # {
@@ -232,25 +288,26 @@ class GoSlideCloud:
         if not await self._checkauth():
             return None
 
-        result = await self._request('GET', 'slide/{}/info'.format(slideid))
-        if result and 'data' in result:
-            return result['data']
+        result = await self._request("GET", "slide/{}/info".format(slideid))
+        if result and "data" in result:
+            return result["data"]
 
         _LOGGER.error("Missing key 'data' in JSON=%s", json.dumps(result))
         return None
 
-    async def slidegetposition(self, slideid):
+    async def slide_get_position(self, slideid):
         """Retrieve the slide position."""
-        result = await self.slideinfo(slideid)
+        result = await self.slide_info(slideid)
         if result:
-            if 'pos' in result:
-                return result['pos']
-            _LOGGER.error("SlideGetPosition: Missing key 'pos' in JSON=%s",
-                          json.dumps(result))
+            if "pos" in result:
+                return result["pos"]
+            _LOGGER.error(
+                "SlideGetPosition: Missing key 'pos' in JSON=%s", json.dumps(result)
+            )
 
         return None
 
-    async def slidesetposition(self, slideid, posin):
+    async def slide_set_position(self, slideid, posin):
         """Set the slide position, only 0.0 - 1.0 is allowed."""
         try:
             pos = float(posin)
@@ -259,71 +316,69 @@ class GoSlideCloud:
             return False
 
         if pos < 0 or pos > 1:
-            _LOGGER.error("SlideSetPosition: '%s' has to be between 0.0-1.0",
-                          pos)
+            _LOGGER.error("SlideSetPosition: '%s' has to be between 0.0-1.0", pos)
             return False
 
         if not await self._checkauth():
             return False
 
-        resp = await self._request('POST',
-                                   'slide/{}/position'.format(slideid),
-                                   {'pos': pos})
+        resp = await self._request(
+            "POST", "slide/{}/position".format(slideid), {"pos": pos}
+        )
         return bool(resp)
 
-    async def slideopen(self, slideid):
+    async def slide_open(self, slideid):
         """Open a slide."""
         if not await self._checkauth():
             return False
 
-        resp = await self._request('POST',
-                                   'slide/{}/position'.format(slideid),
-                                   {'pos': 0.0})
+        resp = await self._request(
+            "POST", "slide/{}/position".format(slideid), {"pos": 0.0}
+        )
         return bool(resp)
 
-    async def slideclose(self, slideid):
+    async def slide_close(self, slideid):
         """Close a slide."""
         if not await self._checkauth():
             return False
 
-        resp = await self._request('POST',
-                                   'slide/{}/position'.format(slideid),
-                                   {'pos': 1.0})
+        resp = await self._request(
+            "POST", "slide/{}/position".format(slideid), {"pos": 1.0}
+        )
         return bool(resp)
 
-    async def slidestop(self, slideid):
+    async def slide_stop(self, slideid):
         """Stop a slide."""
         if not await self._checkauth():
             return False
 
-        resp = await self._request('POST',
-                                   'slide/{}/stop'.format(slideid))
+        resp = await self._request("POST", "slide/{}/stop".format(slideid))
         return bool(resp)
 
-    async def slidecalibrate(self, slideid):
+    async def slide_calibrate(self, slideid):
         """Calibrate a slide."""
         if not await self._checkauth():
             return False
 
-        resp = await self._request('POST',
-                                   'slide/{}/calibrate'.format(slideid))
+        resp = await self._request("POST", "slide/{}/calibrate".format(slideid))
         return bool(resp)
 
-    async def householdget(self):
+    async def household_get(self):
         """Return household information."""
         if not await self._checkauth():
             return False
 
-        resp = await self._request('GET', 'households')
+        resp = await self._request("GET", "households")
         return resp
 
-    async def householdset(self, name, address, lat, lon):
+    async def household_set(self, name, address, lat, lon):
         """Set household information."""
         if not await self._checkauth():
             return False
 
-        resp = await self._request('PATCH', 'households',
-                                   {'name': name,
-                                    'address': address,
-                                    'lat': lat, 'lon': lon})
+        resp = await self._request(
+            "PATCH",
+            "households",
+            {"name": name, "address": address, "lat": lat, "lon": lon},
+        )
         return bool(resp)
