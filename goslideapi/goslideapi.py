@@ -1,9 +1,13 @@
 """Python wrapper for Go Slide API."""
 
+import aiohttp
+import asyncio
+import hashlib
 import json
 import logging
-import asyncio
-import aiohttp
+import os
+import re
+import time
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +34,12 @@ class ClientTimeoutError(Exception):
     pass
 
 
+class DigestAuthCalcError(Exception):
+    """Error to indicate an error that the digest authentication calculation went wrong."""
+
+    pass
+
+
 class GoSlideCloud:
     """API Wrapper for the Go Slide devices."""
 
@@ -51,9 +61,16 @@ class GoSlideCloud:
         self._authfailed = False
         self._expiretoken = None
         self._authexception = authexception
+        self._requestcount = 0
 
     async def _dorequest(self, reqtype, urlsuffix, data=None):
         """HTTPS request handler."""
+
+        # Increment request counter for logging purpose
+        self._requestcount += 1
+        if self._requestcount > 99999:
+            self._requestcount = 1
+
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
 
         self._authfailed = False
@@ -62,7 +79,8 @@ class GoSlideCloud:
             headers["Authorization"] = "Bearer {}".format(self._accesstoken)
 
         _LOGGER.debug(
-            "REQ: API=%s, type=%s, data=%s",
+            "REQ-C%d: API=%s, type=%s, data=%s",
+            self._requestcount,
             self._url.format(urlsuffix),
             reqtype,
             json.dumps(data),
@@ -76,6 +94,7 @@ class GoSlideCloud:
         # 403 - Forbidden, most likely we want to control a slide
         #       which isn't in our account
         # 404 - Can't find API endpoint
+        # 422 - The given data was invalid
         # 424 - If one or multiple Slides are offline. The 'device_info'
         #       will contain code=500, 'Device unavailable' for those slides
         # aiohttp.client_exceptions.ClientConnectorError: No IP, timeout
@@ -91,7 +110,8 @@ class GoSlideCloud:
                 if resp.status in [200, 424]:
                     textdata = await resp.text()
                     _LOGGER.debug(
-                        "RES: API=%s, type=%s, HTTPCode=%s, Data=%s",
+                        "RES-C%d: API=%s, type=%s, HTTPCode=%s, Data=%s",
+                        self._requestcount,
                         self._url.format(urlsuffix),
                         reqtype,
                         resp.status,
@@ -102,7 +122,8 @@ class GoSlideCloud:
                         jsondata = json.loads(textdata)
                     except json.decoder.JSONDecodeError:
                         _LOGGER.error(
-                            "RES: API=%s, type=%s, INVALID JSON=%s",
+                            "RES-C%d: API=%s, type=%s, INVALID JSON=%s",
+                            self._requestcount,
                             self._url.format(urlsuffix),
                             reqtype,
                             textdata,
@@ -113,14 +134,15 @@ class GoSlideCloud:
                 else:
                     textdata = await resp.text()
                     _LOGGER.error(
-                        "RES: API=%s, type=%s, HTTPCode=%s, Data=%s",
+                        "RES-C%d: API=%s, type=%s, HTTPCode=%s, Data=%s",
+                        self._requestcount,
                         self._url.format(urlsuffix),
                         reqtype,
                         resp.status,
                         textdata,
                     )
 
-                    if resp.status == 401:
+                    if resp.status in [401, 422]:
                         # Raise exception, normally used by Home Assistant
                         if self._authexception:
                             raise AuthenticationFailed
@@ -275,13 +297,13 @@ class GoSlideCloud:
         #   "data": {
         #     "board_rev": 1,
         #     "calib_time": 10239,
-        #     "curtain_type": 0,
-        #     "device_name": "Living Room",
+        #     "curtain_type": 0, # deprecated
+        #     "device_name": "Living Room", # deprecated
         #     "mac": "300000000000",
         #     "pos": 0.0,
         #     "slide_id": "slide_300000000000",
         #     "touch_go": true,
-        #     "zone_name": ""
+        #     "zone_name": "" # deprecated
         #   },
         #   "error": null
         # }
@@ -289,6 +311,23 @@ class GoSlideCloud:
             return None
 
         result = await self._request("GET", "slide/{}/info".format(slideid))
+        if result and "data" in result:
+            return result["data"]
+
+        _LOGGER.error("Missing key 'data' in JSON=%s", json.dumps(result))
+        return None
+
+    async def slide_config(self, slideid):
+        """Retrieve the slide configuration."""
+        # The format is:
+        # {
+        #   tbd
+        #   "error": null
+        # }
+        if not await self._checkauth():
+            return None
+
+        result = await self._request("GET", "slides/{}".format(slideid))
         if result and "data" in result:
             return result["data"]
 
@@ -380,5 +419,323 @@ class GoSlideCloud:
             "PATCH",
             "households",
             {"name": name, "address": address, "lat": lat, "lon": lon},
+        )
+        return bool(resp)
+
+
+class GoSlideLocal:
+    """API Wrapper for the Go Slide devices, local connectivity."""
+
+    def __init__(self, timeout=DEFAULT_TIMEOUT, authexception=True):
+        """Create the object with required parameters."""
+        self._timeout = timeout
+        self._cnoncecount = 0
+        self._authexception = authexception
+        self._requestcount = 0
+        self._slides = {}
+
+    def _md5_utf8(self, x):
+        if isinstance(x, str):
+            x = x.encode("utf-8")
+        return hashlib.md5(x).hexdigest()
+
+    def _make_digest_auth(self, username, password, method, uri, my_auth):
+        nonce = re.findall(r'nonce="(.*?)"', my_auth)[0]
+        realm = re.findall(r'realm="(.*?)"', my_auth)[0]
+        qop = re.findall(r'qop="(.*?)"', my_auth)[0]
+        nc = "00000001"
+
+        # Generate cnonce value
+        self._cnoncecount += 1
+        s = str(self._cnoncecount).encode("utf-8")
+        s += nonce.encode("utf-8")
+        s += time.ctime().encode("utf-8")
+        s += os.urandom(8)
+
+        cnonce = hashlib.sha1(s).hexdigest()[:8]
+
+        # calculate HA1
+        HA1 = self._md5_utf8(username + ":" + realm + ":" + password)
+
+        # calculate HA2
+        HA2 = self._md5_utf8(method + ":" + uri)
+
+        if qop == "auth" or "auth" in qop.split(","):
+            # calculate client response
+            response = self._md5_utf8(
+                HA1 + ":" + nonce + ":" + nc + ":" + cnonce + ":" + qop + ":" + HA2
+            )
+        else:
+            # Raise error, this situation shouldn't happe. Slide should always use qop=auth
+            _LOGGER.error("Invalid digest authentication qop=%s found", qop)
+            raise DigestAuthCalcError
+
+        return 'Digest username="{}", realm="{}", nonce="{}", uri="{}", algorithm="MD5", qop=auth, nc={}, cnonce="{}", response="{}"'.format(
+            username, realm, nonce, uri, nc, cnonce, response
+        )
+
+    async def _dorequest(self, reqtype, url, digestauth=None, data=None):
+        """HTTP request handler."""
+
+        # Increment request counter for logging purpose
+        self._requestcount += 1
+        if self._requestcount > 99999:
+            self._requestcount = 1
+
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+
+        if digestauth:
+            headers["Authorization"] = digestauth
+
+        _LOGGER.debug(
+            "REQ-L%d: API=%s, type=%s, data=%s",
+            self._requestcount,
+            url,
+            reqtype,
+            json.dumps(data),
+        )
+
+        # Set a reasonable timeout, otherwise it can take > 300 seconds
+        atimeout = aiohttp.ClientTimeout(total=self._timeout)
+
+        # Known error codes from the Local API:
+        # 401 - Digest challenge
+        # aiohttp.client_exceptions.ClientConnectorError: No IP, timeout
+
+        try:
+            async with aiohttp.request(
+                reqtype, url, headers=headers, json=data, timeout=atimeout
+            ) as resp:
+                if resp.status == 200:
+                    textdata = await resp.text()
+                    _LOGGER.debug(
+                        "RES-L%d: API=%s, type=%s, HTTPCode=%s, Data=%s",
+                        self._requestcount,
+                        url,
+                        reqtype,
+                        resp.status,
+                        textdata,
+                    )
+
+                    try:
+                        jsondata = json.loads(textdata)
+                    except json.decoder.JSONDecodeError:
+                        _LOGGER.error(
+                            "RES-L%d: API=%s, type=%s, INVALID JSON=%s",
+                            self._requestcount,
+                            url,
+                            reqtype,
+                            textdata,
+                        )
+                        jsondata = None
+
+                    return resp.status, jsondata
+                if resp.status == 401:
+
+                    if "WWW-Authenticate" in resp.headers:
+                        headerdata = resp.headers["WWW-Authenticate"]
+                    else:
+                        headerdata = None
+
+                    _LOGGER.debug(
+                        "RES-L%d: API=%s, type=%s, HTTPCode=%s, WWW-Authenticate=%s",
+                        self._requestcount,
+                        url,
+                        reqtype,
+                        resp.status,
+                        headerdata,
+                    )
+
+                    return resp.status, headerdata
+                else:
+                    textdata = await resp.text()
+                    _LOGGER.error(
+                        "RES-L%d: API=%s, type=%s, HTTPCode=%s, Data=%s",
+                        self._requestcount,
+                        url,
+                        reqtype,
+                        resp.status,
+                        textdata,
+                    )
+
+                    return resp.status, None
+        except (
+            aiohttp.client_exceptions.ClientConnectionError,
+            aiohttp.client_exceptions.ClientConnectorError,
+        ) as err:
+            raise ClientConnectionError(str(err))
+        except asyncio.TimeoutError as err:
+            raise ClientTimeoutError("Connection Timeout")
+
+    async def _request(self, hostname, password, reqtype, uri, data=None):
+        """Digest authentication using dorequest."""
+
+        # Local API uses digest authentication:
+        # https://en.wikipedia.org/wiki/Digest_access_authentication
+
+        # We need to send 2 requests:
+        #  - first request will result in a 401 with a response header "WWW-Authenticate"
+        #  - second request will add "Authorization" header calculated from "WWW-Authenticate"
+
+        # format URL with hostname/ip and uri value
+        url = "http://{}{}".format(hostname, uri)
+
+        # First request, should return a 401 error
+        respstatus, resptext = await self._dorequest(reqtype, url)
+
+        # Only a 401 response is correct
+        if respstatus == 401:
+
+            # The resptext contains the WWW-Authentication header
+            auth = self._make_digest_auth("user", password, reqtype, uri, resptext)
+
+            respstatus, resptext = await self._dorequest(reqtype, url, digestauth=auth, data=data)
+
+            if respstatus == 200:
+                return resptext
+
+            # Anything else is an error
+            _LOGGER.error(
+                "Failed request with Local API Digest Authentication challenge. HTTPCode=%s",
+                respstatus,
+            )
+        else:
+            # We expected a 401 Digest Auth here
+            _LOGGER.error(
+                "Failed request with Local API. Received HTTPCode=%s, expected HTTPCode=401",
+                respstatus,
+            )
+
+        return None
+
+    async def slide_add(self, hostname, password):
+        """Add slide to internal table, then you can use the local API."""
+        self._slides[hostname] = password
+
+    async def slide_del(self, hostname):
+        """Delete slide from internal table."""
+        if hostname in self._slides:
+            self._slides.remove(hostname)
+        else:
+            _LOGGER.error("Tried to delete none-existing '%s' from list", hostname)
+
+    async def _slide_exist(self, hostname):
+        """Function to check if slide exist in internal table."""
+        if hostname in self._slides:
+            return True
+        else:
+            _LOGGER.error(
+                "Cannot find hostname '%s' in list, forgot to call 'slide_add'?",
+                hostname,
+            )
+            return False
+
+    async def slide_info(self, hostname):
+        """Retrieve the slide info."""
+        # The format is:
+        # {
+        #   "slide_id": "slide_300000000000",
+        #   "mac": "300000000000",
+        #   "board_rev": 1,
+        #   "device_name": "",
+        #   "zone_name": "",
+        #   "curtain_type": 0,
+        #   "calib_time": 10239,
+        #   "pos": 0.0,
+        #   "touch_go": true
+        # }
+
+        if not await self._slide_exist(hostname):
+            return None
+
+        result = await self._request(
+            hostname, self._slides[hostname], "POST", "/rpc/Slide.GetInfo"
+        )
+
+        return result
+
+    async def slide_get_position(self, hostname):
+        """Retrieve the slide position."""
+        result = await self.slide_info(hostname)
+        if result:
+            if "pos" in result:
+                return result["pos"]
+            _LOGGER.error(
+                "SlideGetPosition: Missing key 'pos' in JSON=%s", json.dumps(result)
+            )
+
+        return None
+
+    async def slide_set_position(self, hostname, posin):
+        """Set the slide position, only 0.0 - 1.0 is allowed."""
+        try:
+            pos = float(posin)
+        except ValueError:
+            _LOGGER.error("SlideSetPosition: '%s' has to be numeric", posin)
+            return False
+
+        if pos < 0 or pos > 1:
+            _LOGGER.error("SlideSetPosition: '%s' has to be between 0.0-1.0", pos)
+            return False
+
+        if not await self._slide_exist(hostname):
+            return False
+
+        resp = await self._request(
+            hostname, self._slides[hostname], "POST", "/rpc/Slide.SetPos", {"pos": pos}
+        )
+        return bool(resp)
+
+    async def slide_open(self, hostname):
+        """Open a slide."""
+        if not await self._slide_exist(hostname):
+            return False
+
+        resp = await self._request(
+            hostname, self._slides[hostname], "POST", "/rpc/Slide.SetPos", {"pos": 0.0}
+        )
+        return bool(resp)
+
+    async def slide_close(self, hostname):
+        """Close a slide."""
+        if not await self._slide_exist(hostname):
+            return False
+
+        resp = await self._request(
+            hostname, self._slides[hostname], "POST", "/rpc/Slide.SetPos", {"pos": 1.0}
+        )
+        return bool(resp)
+
+    async def slide_stop(self, hostname):
+        """Stop a slide."""
+        if not await self._slide_exist(hostname):
+            return False
+
+        resp = await self._request(
+            hostname, self._slides[hostname], "POST", "/rpc/Slide.Stop"
+        )
+        return bool(resp)
+
+    async def slide_calibrate(self, hostname):
+        """Calibrate a slide."""
+        if not await self._slide_exist(hostname):
+            return False
+
+        resp = await self._request(
+            hostname, self._slides[hostname], "POST", "/rpc/Slide.Calibrate"
+        )
+        return bool(resp)
+
+    async def slide_configwifi(self, hostname, ssid, password):
+        """Configure slide wifi."""
+        if not await self._slide_exist(hostname):
+            return False
+
+        resp = await self._request(
+            hostname,
+            self._slides[hostname],
+            "POST",
+            "/rpc/Slide.Config.Wifi",
+            {"ssid": ssid, "pass": password},
         )
         return bool(resp)

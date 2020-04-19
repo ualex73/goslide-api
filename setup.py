@@ -1,5 +1,5 @@
 '''
-Install goslide.io Open Cloud API
+Install Slide Open Cloud and Local API
 '''
 
 import setuptools
@@ -9,12 +9,12 @@ with open('README.md') as f:
 
 setuptools.setup(
     name='goslide-api',
-    version='0.5.1',
+    version='0.6.1',
     url='https://github.com/ualex73/goslide-api',
     license='Apache License 2.0',
     author='Alexander Kuiper',
     author_email='ualex73@gmail.com',
-    description='Python API to utilise the goslide.io Open Cloud API',
+    description='Python API to utilise the Slide Open Cloud and Local API',
     long_description=LONG_DESCRIPTION,
     long_description_content_type='text/markdown',
     packages=setuptools.find_packages(),

@@ -1,7 +1,7 @@
 
 # GoSlide Open Cloud API
 
-Python API to utilise the GoSlide Open Cloud JSON API
+Python API to utilise the GoSlide Open Cloud and Local JSON API
 
 ## Requirements
 
