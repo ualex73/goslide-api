@@ -154,9 +154,9 @@ class GoSlideCloud:
             aiohttp.client_exceptions.ClientConnectionError,
             aiohttp.client_exceptions.ClientConnectorError,
         ) as err:
-            raise ClientConnectionError(str(err))
+            raise ClientConnectionError(str(err)) from None
         except asyncio.TimeoutError as err:
-            raise ClientTimeoutError("Connection Timeout")
+            raise ClientTimeoutError("Connection Timeout") from None
 
     async def _request(self, reqtype, urlsuffix, data=None):
         """Retry authentication around dorequest."""
@@ -563,9 +563,9 @@ class GoSlideLocal:
             aiohttp.client_exceptions.ClientConnectionError,
             aiohttp.client_exceptions.ClientConnectorError,
         ) as err:
-            raise ClientConnectionError(str(err))
+            raise ClientConnectionError(str(err)) from None
         except asyncio.TimeoutError as err:
-            raise ClientTimeoutError("Connection Timeout")
+            raise ClientTimeoutError("Connection Timeout") from None
 
     async def _request(self, hostname, password, reqtype, uri, data=None):
         """Digest authentication using dorequest."""
@@ -589,7 +589,9 @@ class GoSlideLocal:
             # The resptext contains the WWW-Authentication header
             auth = self._make_digest_auth("user", password, reqtype, uri, resptext)
 
-            respstatus, resptext = await self._dorequest(reqtype, url, digestauth=auth, data=data)
+            respstatus, resptext = await self._dorequest(
+                reqtype, url, digestauth=auth, data=data
+            )
 
             if respstatus == 200:
                 return resptext
