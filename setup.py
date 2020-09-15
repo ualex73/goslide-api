@@ -18,7 +18,8 @@ setuptools.setup(
     long_description=LONG_DESCRIPTION,
     long_description_content_type='text/markdown',
     packages=setuptools.find_packages(),
-    install_requires=['aiohttp', 'asyncio'],
+    install_requires=['aiohttp'],
+    python_requires='>=3.5.2',
     classifiers=[
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
