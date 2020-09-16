@@ -4,7 +4,7 @@ Install Slide Open Cloud and Local API
 
 import setuptools
 
-with open('README.md') as f:
+with open('README.pypi') as f:
     LONG_DESCRIPTION = f.read()
 
 setuptools.setup(
