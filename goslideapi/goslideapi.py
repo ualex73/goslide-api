@@ -50,6 +50,7 @@ class GoSlideCloud:
         timeout=DEFAULT_TIMEOUT,
         url=BASEURL,
         authexception=True,
+        verify_ssl=True,
     ):
         """Create the object with required parameters."""
         self._username = username
@@ -62,6 +63,7 @@ class GoSlideCloud:
         self._expiretoken = None
         self._authexception = authexception
         self._requestcount = 0
+        self._verify_ssl = verify_ssl
 
     async def _dorequest(self, reqtype, urlsuffix, data=None):
         """HTTPS request handler."""
@@ -100,12 +102,17 @@ class GoSlideCloud:
         # aiohttp.client_exceptions.ClientConnectorError: No IP, timeout
 
         try:
+            connector = None
+            if not self._verify_ssl:
+                connector = aiohttp.TCPConnector(verify_ssl=False)
+
             async with aiohttp.request(
                 reqtype,
                 self._url.format(urlsuffix),
                 headers=headers,
                 json=data,
                 timeout=atimeout,
+                connector=connector,
             ) as resp:
                 if resp.status in [200, 424]:
                     textdata = await resp.text()
