@@ -433,11 +433,12 @@ class GoSlideCloud:
 class GoSlideLocal:
     """API Wrapper for the Go Slide devices, local connectivity."""
 
-    def __init__(self, timeout=DEFAULT_TIMEOUT, authexception=True):
+    def __init__(self, timeout=DEFAULT_TIMEOUT, authexception=True, apiversion=1):
         """Create the object with required parameters."""
         self._timeout = timeout
-        self._cnoncecount = 0
         self._authexception = authexception
+        self._apiversion = apiversion
+        self._cnoncecount = 0
         self._requestcount = 0
         self._slides = {}
 
@@ -537,6 +538,7 @@ class GoSlideLocal:
                         jsondata = None
 
                     return resp.status, jsondata
+
                 if resp.status == 401:
 
                     if "WWW-Authenticate" in resp.headers:
@@ -590,28 +592,40 @@ class GoSlideLocal:
         # First request, should return a 401 error
         respstatus, resptext = await self._dorequest(reqtype, url)
 
-        # Only a 401 response is correct
-        if respstatus == 401:
+        # Default is version 1, when we do WWW-Authentication
+        if self._apiversion == 1:
 
-            # The resptext contains the WWW-Authentication header
-            auth = self._make_digest_auth("user", password, reqtype, uri, resptext)
+            # Only a 401 response is correct
+            if respstatus == 401:
 
-            respstatus, resptext = await self._dorequest(
-                reqtype, url, digestauth=auth, data=data
-            )
+                # The resptext contains the WWW-Authentication header
+                auth = self._make_digest_auth("user", password, reqtype, uri, resptext)
 
+                respstatus, resptext = await self._dorequest(
+                    reqtype, url, digestauth=auth, data=data
+                )
+
+                if respstatus == 200:
+                    return resptext
+
+                # Anything else is an error
+                _LOGGER.error(
+                    "Failed request with Local API Digest Authentication challenge. HTTPCode=%s",
+                    respstatus,
+                )
+            else:
+                # We expected a 401 Digest Auth here
+                _LOGGER.error(
+                    "Failed request with Local API. Received HTTPCode=%s, expected HTTPCode=401",
+                    respstatus,
+                )
+        else:
             if respstatus == 200:
                 return resptext
 
             # Anything else is an error
             _LOGGER.error(
-                "Failed request with Local API Digest Authentication challenge. HTTPCode=%s",
-                respstatus,
-            )
-        else:
-            # We expected a 401 Digest Auth here
-            _LOGGER.error(
-                "Failed request with Local API. Received HTTPCode=%s, expected HTTPCode=401",
+                "Failed request with Local API. HTTPCode=%s",
                 respstatus,
             )
 
