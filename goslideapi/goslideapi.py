@@ -433,7 +433,7 @@ class GoSlideCloud:
 class GoSlideLocal:
     """API Wrapper for the Go Slide devices, local connectivity."""
 
-    def __init__(self, timeout=DEFAULT_TIMEOUT, authexception=True, apiversion=1):
+    def __init__(self, timeout=DEFAULT_TIMEOUT, authexception=True, apiversion=2):
         """Create the object with required parameters."""
         self._timeout = timeout
         self._authexception = authexception
@@ -589,13 +589,16 @@ class GoSlideLocal:
         # format URL with hostname/ip and uri value
         url = "http://{}{}".format(hostname, uri)
 
-        # First request, should return a 401 error
-        respstatus, resptext = await self._dorequest(reqtype, url)
+        # First request, should return a 401 error for v1
+        # First request is not required for v2
 
         # Default is version 1, when we do WWW-Authentication
         if self._apiversion == 1:
 
-            # Only a 401 response is correct
+            #do request to obtain a WWW-authentication header:
+            respstatus, resptext = await self._dorequest(reqtype, url)
+
+            #Only a 401 response is correct
             if respstatus == 401:
 
                 # The resptext contains the WWW-Authentication header
@@ -616,17 +619,28 @@ class GoSlideLocal:
             else:
                 # We expected a 401 Digest Auth here
                 _LOGGER.error(
-                    "Failed request with Local API. Received HTTPCode=%s, expected HTTPCode=401",
+                    "Failed request with Local API v1. Received HTTPCode=%s, expected HTTPCode=401. Maybe try switching to v2?",
                     respstatus,
                 )
-        else:
-            if respstatus == 200:
-                return resptext
 
-            # Anything else is an error
+        elif self._apiversion == 2:
+
+                respstatus, resptext = await self._dorequest(
+                    reqtype, url, data=data
+                )
+
+                if respstatus == 200:
+                    return resptext
+
+                # Anything else is an error
+                _LOGGER.error(
+                    "Failed request Local API v2. HTTPCode=%s",
+                    respstatus,
+                )
+
+        else:
             _LOGGER.error(
-                "Failed request with Local API. HTTPCode=%s",
-                respstatus,
+                "Only v1 and v2 is supported.",
             )
 
         return None
