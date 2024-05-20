@@ -7,7 +7,23 @@ Python API to utilise the GoSlide Open Cloud and Local JSON API
 
 - Python >= 3.5.2
 
-## Usage
+## Usage Local
+```python
+
+import asyncio
+from goslideapi import GoSlideLocal
+
+loop = asyncio.get_event_loop()
+goslide = GoSlideLocal
+
+result = loop.run_until_complete(goslide.slide_add("192.168.1.1", "anypassword", 2))
+slide = loop.run_until_complete(goslide.slide_info("192.168.1.1"))
+loop.run_until_complete(goslide.slide_open("192.168.1.1"))
+loop.run_until_complete(goslide.slide_close("192.168.1.1"))
+
+```
+
+## Usage Cloud
 ```python
 
 import asyncio
@@ -42,10 +58,6 @@ if login:
 else:
     print('login failed')
 ```
-
-## TODO
-
-- Expose more API functions
 
 ## License
 

@@ -433,14 +433,14 @@ class GoSlideCloud:
 class GoSlideLocal:
     """API Wrapper for the Go Slide devices, local connectivity."""
 
-    def __init__(self, timeout=DEFAULT_TIMEOUT, authexception=True, apiversion=2):
+    def __init__(self, timeout=DEFAULT_TIMEOUT, authexception=True):
         """Create the object with required parameters."""
         self._timeout = timeout
         self._authexception = authexception
-        self._apiversion = apiversion
         self._cnoncecount = 0
         self._requestcount = 0
-        self._slides = {}
+        self._slide_passwd = {}
+        self._slide_api = {}
 
     def _md5_utf8(self, x):
         if isinstance(x, str):
@@ -576,7 +576,7 @@ class GoSlideLocal:
         except asyncio.TimeoutError as err:
             raise ClientTimeoutError("Connection Timeout") from None
 
-    async def _request(self, hostname, password, reqtype, uri, data=None):
+    async def _request(self, hostname, password, apiversion, reqtype, uri, data=None):
         """Digest authentication using dorequest."""
 
         # Local API uses digest authentication:
@@ -593,12 +593,12 @@ class GoSlideLocal:
         # First request is not required for v2
 
         # Default is version 1, when we do WWW-Authentication
-        if self._apiversion == 1:
+        if apiversion == 1:
 
-            #do request to obtain a WWW-authentication header:
+            # do request to obtain a WWW-authentication header:
             respstatus, resptext = await self._dorequest(reqtype, url)
 
-            #Only a 401 response is correct
+            # Only a 401 response is correct
             if respstatus == 401:
 
                 # The resptext contains the WWW-Authentication header
@@ -619,24 +619,22 @@ class GoSlideLocal:
             else:
                 # We expected a 401 Digest Auth here
                 _LOGGER.error(
-                    "Failed request with Local API v1. Received HTTPCode=%s, expected HTTPCode=401. Maybe try switching to v2?",
+                    "Failed request with Local API v1. Received HTTPCode=%s, expected HTTPCode=401. Maybe try switching to api version 2?",
                     respstatus,
                 )
 
-        elif self._apiversion == 2:
+        elif apiversion == 2:
 
-                respstatus, resptext = await self._dorequest(
-                    reqtype, url, data=data
-                )
+            respstatus, resptext = await self._dorequest(reqtype, url, data=data)
 
-                if respstatus == 200:
-                    return resptext
+            if respstatus == 200:
+                return resptext
 
-                # Anything else is an error
-                _LOGGER.error(
-                    "Failed request Local API v2. HTTPCode=%s",
-                    respstatus,
-                )
+            # Anything else is an error
+            _LOGGER.error(
+                "Failed request Local API v2. HTTPCode=%s",
+                respstatus,
+            )
 
         else:
             _LOGGER.error(
@@ -645,20 +643,27 @@ class GoSlideLocal:
 
         return None
 
-    async def slide_add(self, hostname, password):
+    async def slide_add(self, hostname, password, api=2):
         """Add slide to internal table, then you can use the local API."""
-        self._slides[hostname] = password
+        self._slide_passwd[hostname] = password
+        self._slide_api[hostname] = api
 
     async def slide_del(self, hostname):
         """Delete slide from internal table."""
-        if hostname in self._slides:
-            self._slides.remove(hostname)
+        if hostname in self._slide_passwd:
+            self._slide_passwd.remove(hostname)
+        if hostname in self._slide_api:
+            self._slide_api.remove(hostname)
         else:
             _LOGGER.error("Tried to delete none-existing '%s' from list", hostname)
 
+    async def slide_list(self):
+        """List all registered slides."""
+        return list(self._slide_passwd.keys())
+
     async def _slide_exist(self, hostname):
         """Function to check if slide exist in internal table."""
-        if hostname in self._slides:
+        if hostname in self._slide_passwd:
             return True
         else:
             _LOGGER.error(
@@ -686,7 +691,11 @@ class GoSlideLocal:
             return None
 
         result = await self._request(
-            hostname, self._slides[hostname], "POST", "/rpc/Slide.GetInfo"
+            hostname,
+            self._slide_passwd[hostname],
+            self._slide_api[hostname],
+            "POST",
+            "/rpc/Slide.GetInfo",
         )
 
         return result
@@ -719,7 +728,12 @@ class GoSlideLocal:
             return False
 
         resp = await self._request(
-            hostname, self._slides[hostname], "POST", "/rpc/Slide.SetPos", {"pos": pos}
+            hostname,
+            self._slide_passwd[hostname],
+            self._slide_api[hostname],
+            "POST",
+            "/rpc/Slide.SetPos",
+            data={"pos": pos},
         )
         return bool(resp)
 
@@ -729,7 +743,12 @@ class GoSlideLocal:
             return False
 
         resp = await self._request(
-            hostname, self._slides[hostname], "POST", "/rpc/Slide.SetPos", {"pos": 0.0}
+            hostname,
+            self._slide_passwd[hostname],
+            self._slide_api[hostname],
+            "POST",
+            "/rpc/Slide.SetPos",
+            data={"pos": 0.0},
         )
         return bool(resp)
 
@@ -739,7 +758,12 @@ class GoSlideLocal:
             return False
 
         resp = await self._request(
-            hostname, self._slides[hostname], "POST", "/rpc/Slide.SetPos", {"pos": 1.0}
+            hostname,
+            self._slide_passwd[hostname],
+            self._slide_api[hostname],
+            "POST",
+            "/rpc/Slide.SetPos",
+            data={"pos": 1.0},
         )
         return bool(resp)
 
@@ -749,7 +773,11 @@ class GoSlideLocal:
             return False
 
         resp = await self._request(
-            hostname, self._slides[hostname], "POST", "/rpc/Slide.Stop"
+            hostname,
+            self._slide_passwd[hostname],
+            self._slide_api[hostname],
+            "POST",
+            "/rpc/Slide.Stop",
         )
         return bool(resp)
 
@@ -759,7 +787,11 @@ class GoSlideLocal:
             return False
 
         resp = await self._request(
-            hostname, self._slides[hostname], "POST", "/rpc/Slide.Calibrate"
+            hostname,
+            self._slide_passwd[hostname],
+            self._slide_api[hostname],
+            "POST",
+            "/rpc/Slide.Calibrate",
         )
         return bool(resp)
 
@@ -770,7 +802,8 @@ class GoSlideLocal:
 
         resp = await self._request(
             hostname,
-            self._slides[hostname],
+            self._slide_passwd[hostname],
+            self._slide_api[hostname],
             "POST",
             "/rpc/Slide.Config.Wifi",
             {"ssid": ssid, "pass": password},

@@ -9,7 +9,7 @@ with open('README.pypi') as f:
 
 setuptools.setup(
     name='goslide-api',
-    version='0.6.7',
+    version='0.6.8',
     url='https://github.com/ualex73/goslide-api',
     license='Apache License 2.0',
     author='Alexander Kuiper',
@@ -26,6 +26,8 @@ setuptools.setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
     ],
