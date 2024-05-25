@@ -806,6 +806,33 @@ class GoSlideLocal:
             self._slide_api[hostname],
             "POST",
             "/rpc/Slide.Config.Wifi",
-            {"ssid": ssid, "pass": password},
+            data={"ssid": ssid, "pass": password},
+        )
+        return bool(resp)
+
+    async def slide_get_touchgo(self, hostname):
+        """Retrieve the slide TouchGo setting."""
+        result = await self.slide_info(hostname)
+        if result:
+            if "touch_go" in result:
+                return result["touch_go"]
+            _LOGGER.error(
+                "SlideGetTouchGo: Missing key 'touch_go' in JSON=%s", json.dumps(result)
+            )
+
+        return None
+
+    async def slide_set_touchgo(self, hostname, value):
+        """Change Touch-Go of a slide."""
+        if not await self._slide_exist(hostname):
+            return False
+
+        resp = await self._request(
+            hostname,
+            self._slide_passwd[hostname],
+            self._slide_api[hostname],
+            "POST",
+            "/rpc/Slide.touchGo",
+            data={"touch_go": value},
         )
         return bool(resp)
