@@ -13,7 +13,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # API Link: https://documenter.getpostman.com/view/6223391/S1Lu2pSf
 BASEURL = "https://api.goslide.io/api/{}"
-DEFAULT_TIMEOUT = 10
+DEFAULT_TIMEOUT_CLOUD = 10
+DEFAULT_TIMEOUT_LOCAL = 5
 
 
 class AuthenticationFailed(Exception):
@@ -47,7 +48,7 @@ class GoSlideCloud:
         self,
         username,
         password,
-        timeout=DEFAULT_TIMEOUT,
+        timeout=DEFAULT_TIMEOUT_CLOUD,
         url=BASEURL,
         authexception=True,
         verify_ssl=True,
@@ -433,7 +434,7 @@ class GoSlideCloud:
 class GoSlideLocal:
     """API Wrapper for the Go Slide devices, local connectivity."""
 
-    def __init__(self, timeout=DEFAULT_TIMEOUT, authexception=True):
+    def __init__(self, timeout=DEFAULT_TIMEOUT_LOCAL, authexception=True):
         """Create the object with required parameters."""
         self._timeout = timeout
         self._authexception = authexception
