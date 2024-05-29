@@ -597,9 +597,15 @@ class GoSlideLocal:
         if apiversion == 1:
 
             # do request to obtain a WWW-authentication header:
-            respstatus, resptext = await self._dorequest(reqtype, url)
+            respstatus, resptext = await self._dorequest(reqtype, url, data=data)
+            
+            # Authentication was not needed. Slide has been upgraded.
+            if respstatus == 200:
+                _LOGGER.debug("Slide %s updated to API version 2", hostname)
+                self._slide_api[hostname] = 2
+                return resptext
 
-            # Only a 401 response is correct
+            # Otherwise, we should have a 401 response
             if respstatus == 401:
 
                 # The resptext contains the WWW-Authentication header
