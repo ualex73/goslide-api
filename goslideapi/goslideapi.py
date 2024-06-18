@@ -837,3 +837,36 @@ class GoSlideLocal:
             data={"touch_go": value},
         )
         return bool(resp)
+
+    async def slide_set_motor_strength(self, hostname, calib_current, maxcurrent):
+        """Change Motor Strength a slide."""
+        if not await self._slide_exist(hostname):
+            return False
+
+        # *** Do NOT go over 1450 ***
+        # Light: maxcurrent=900, calib_current=850
+        # Medium: maxcurrent=1250, calib_current=1200
+
+        if calib_current >= 1450:
+            _LOGGER.error(
+                "Slide.Config.Motor: 'calib_current=%s' has to be lower than 1450",
+                calib_current,
+            )
+            return False
+
+        if maxcurrent >= 1450:
+            _LOGGER.error(
+                "Slide.Config.Motor: 'maxcurrent=%s' has to be lower than 1450",
+                maxcurrent,
+            )
+            return False
+
+        resp = await self._request(
+            hostname,
+            self._slide_passwd[hostname],
+            self._slide_api[hostname],
+            "POST",
+            "/rpc/Slide.Config.Motor",
+            data={"calib_current": calib_current, "maxcurrent": maxcurrent},
+        )
+        return bool(resp)
