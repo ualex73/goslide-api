@@ -27,7 +27,7 @@ loop.run_until_complete(goslide.slide_close("192.168.1.1"))
 ```python
 
 import asyncio
-from goslideapi import GoSlideCloud()
+from goslideapi import GoSlideCloud
 
 loop = asyncio.get_event_loop()
 goslide = GoSlideCloud('email', 'password')
