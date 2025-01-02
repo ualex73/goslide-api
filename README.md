@@ -1,5 +1,5 @@
 
-# GoSlide Open Cloud API
+# GoSlide API
 
 Python API to utilise the GoSlide Open Cloud and Local JSON API
 
@@ -23,7 +23,7 @@ loop.run_until_complete(goslide.slide_close("192.168.1.1"))
 
 ```
 
-## Usage Cloud
+## Usage Cloud (deprecated)
 ```python
 
 import asyncio
