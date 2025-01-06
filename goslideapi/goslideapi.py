@@ -598,7 +598,7 @@ class GoSlideLocal:
 
             # do request to obtain a WWW-authentication header:
             respstatus, resptext = await self._dorequest(reqtype, url, data=data)
-            
+
             # Authentication was not needed. Slide has been upgraded.
             if respstatus == 200:
                 _LOGGER.debug("Slide %s updated to API version 2", hostname)
@@ -658,9 +658,9 @@ class GoSlideLocal:
     async def slide_del(self, hostname):
         """Delete slide from internal table."""
         if hostname in self._slide_passwd:
-            self._slide_passwd.remove(hostname)
+            del self._slide_passwd[hostname]
         if hostname in self._slide_api:
-            self._slide_api.remove(hostname)
+            del self._slide_api[hostname]
         else:
             _LOGGER.error("Tried to delete none-existing '%s' from list", hostname)
 
@@ -844,7 +844,7 @@ class GoSlideLocal:
         )
         return bool(resp)
 
-    async def slide_set_motor_strength(self, hostname,  maxcurrent, calib_current):
+    async def slide_set_motor_strength(self, hostname, maxcurrent, calib_current):
         """Change Motor Strength a slide."""
         if not await self._slide_exist(hostname):
             return False
