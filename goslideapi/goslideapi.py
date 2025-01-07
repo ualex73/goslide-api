@@ -434,7 +434,7 @@ class GoSlideCloud:
 class GoSlideLocal:
     """API Wrapper for the Go Slide devices, local connectivity."""
 
-    def __init__(self, timeout=DEFAULT_TIMEOUT_LOCAL, authexception=True):
+    def __init__(self, timeout=DEFAULT_TIMEOUT_LOCAL, authexception=True, session: aiohttp.ClientSession | None = None):
         """Create the object with required parameters."""
         self._timeout = timeout
         self._authexception = authexception
@@ -442,6 +442,10 @@ class GoSlideLocal:
         self._requestcount = 0
         self._slide_passwd = {}
         self._slide_api = {}
+        if not session:
+            self.session = aiohttp.ClientSession()
+        else:
+            self.session = session
 
     def _md5_utf8(self, x):
         if isinstance(x, str):
@@ -483,7 +487,7 @@ class GoSlideLocal:
             username, realm, nonce, uri, nc, cnonce, response
         )
 
-    async def _dorequest(self, reqtype, url, digestauth=None, data=None):
+    async def _dorequest(self, url, digestauth=None, data=None):
         """HTTP request handler."""
 
         # Increment request counter for logging purpose
@@ -500,7 +504,6 @@ class GoSlideLocal:
             "REQ-L%d: API=%s, type=%s, data=%s",
             self._requestcount,
             url,
-            reqtype,
             json.dumps(data),
         )
 
@@ -512,16 +515,15 @@ class GoSlideLocal:
         # aiohttp.client_exceptions.ClientConnectorError: No IP, timeout
 
         try:
-            async with aiohttp.request(
-                reqtype, url, headers=headers, json=data, timeout=atimeout
+            async with self.session.post(
+                url, headers=headers, json=data, timeout=atimeout
             ) as resp:
                 if resp.status == 200:
                     textdata = await resp.text()
                     _LOGGER.debug(
-                        "RES-L%d: API=%s, type=%s, HTTPCode=%s, Data=%s",
+                        "RES-L%d: API=%s, HTTPCode=%s, Data=%s",
                         self._requestcount,
                         url,
-                        reqtype,
                         resp.status,
                         textdata,
                     )
@@ -530,10 +532,9 @@ class GoSlideLocal:
                         jsondata = json.loads(textdata)
                     except json.decoder.JSONDecodeError:
                         _LOGGER.error(
-                            "RES-L%d: API=%s, type=%s, INVALID JSON=%s",
+                            "RES-L%d: API=%s, INVALID JSON=%s",
                             self._requestcount,
                             url,
-                            reqtype,
                             textdata,
                         )
                         jsondata = None
@@ -548,10 +549,9 @@ class GoSlideLocal:
                         headerdata = None
 
                     _LOGGER.debug(
-                        "RES-L%d: API=%s, type=%s, HTTPCode=%s, WWW-Authenticate=%s",
+                        "RES-L%d: API=%s, HTTPCode=%s, WWW-Authenticate=%s",
                         self._requestcount,
                         url,
-                        reqtype,
                         resp.status,
                         headerdata,
                     )
@@ -560,10 +560,9 @@ class GoSlideLocal:
                 else:
                     textdata = await resp.text()
                     _LOGGER.error(
-                        "RES-L%d: API=%s, type=%s, HTTPCode=%s, Data=%s",
+                        "RES-L%d: API=%s, HTTPCode=%s, Data=%s",
                         self._requestcount,
                         url,
-                        reqtype,
                         resp.status,
                         textdata,
                     )
@@ -577,7 +576,7 @@ class GoSlideLocal:
         except asyncio.TimeoutError as err:
             raise ClientTimeoutError("Connection Timeout") from None
 
-    async def _request(self, hostname, password, apiversion, reqtype, uri, data=None):
+    async def _request(self, hostname, password, apiversion, uri, data=None):
         """Digest authentication using dorequest."""
 
         # Local API uses digest authentication:
@@ -597,7 +596,7 @@ class GoSlideLocal:
         if apiversion == 1:
 
             # do request to obtain a WWW-authentication header:
-            respstatus, resptext = await self._dorequest(reqtype, url, data=data)
+            respstatus, resptext = await self._dorequest(url, data=data)
 
             # Authentication was not needed. Slide has been upgraded.
             if respstatus == 200:
@@ -609,10 +608,10 @@ class GoSlideLocal:
             if respstatus == 401:
 
                 # The resptext contains the WWW-Authentication header
-                auth = self._make_digest_auth("user", password, reqtype, uri, resptext)
+                auth = self._make_digest_auth("user", password, uri, resptext)
 
                 respstatus, resptext = await self._dorequest(
-                    reqtype, url, digestauth=auth, data=data
+                    url, digestauth=auth, data=data
                 )
 
                 if respstatus == 200:
@@ -632,7 +631,7 @@ class GoSlideLocal:
 
         elif apiversion == 2:
 
-            respstatus, resptext = await self._dorequest(reqtype, url, data=data)
+            respstatus, resptext = await self._dorequest(url, data=data)
 
             if respstatus == 200:
                 return resptext
@@ -650,7 +649,7 @@ class GoSlideLocal:
 
         return None
 
-    async def slide_add(self, hostname, password, api=2):
+    async def slide_add(self, hostname, password="", api=2):
         """Add slide to internal table, then you can use the local API."""
         self._slide_passwd[hostname] = password
         self._slide_api[hostname] = api
@@ -701,7 +700,6 @@ class GoSlideLocal:
             hostname,
             self._slide_passwd[hostname],
             self._slide_api[hostname],
-            "POST",
             "/rpc/Slide.GetInfo",
         )
 
@@ -738,7 +736,6 @@ class GoSlideLocal:
             hostname,
             self._slide_passwd[hostname],
             self._slide_api[hostname],
-            "POST",
             "/rpc/Slide.SetPos",
             data={"pos": pos},
         )
@@ -753,7 +750,6 @@ class GoSlideLocal:
             hostname,
             self._slide_passwd[hostname],
             self._slide_api[hostname],
-            "POST",
             "/rpc/Slide.SetPos",
             data={"pos": 0.0},
         )
@@ -768,7 +764,6 @@ class GoSlideLocal:
             hostname,
             self._slide_passwd[hostname],
             self._slide_api[hostname],
-            "POST",
             "/rpc/Slide.SetPos",
             data={"pos": 1.0},
         )
@@ -783,7 +778,6 @@ class GoSlideLocal:
             hostname,
             self._slide_passwd[hostname],
             self._slide_api[hostname],
-            "POST",
             "/rpc/Slide.Stop",
         )
         return bool(resp)
@@ -797,7 +791,6 @@ class GoSlideLocal:
             hostname,
             self._slide_passwd[hostname],
             self._slide_api[hostname],
-            "POST",
             "/rpc/Slide.Calibrate",
         )
         return bool(resp)
@@ -811,7 +804,6 @@ class GoSlideLocal:
             hostname,
             self._slide_passwd[hostname],
             self._slide_api[hostname],
-            "POST",
             "/rpc/Slide.Config.Wifi",
             data={"ssid": ssid, "pass": password},
         )
@@ -838,7 +830,6 @@ class GoSlideLocal:
             hostname,
             self._slide_passwd[hostname],
             self._slide_api[hostname],
-            "POST",
             "/rpc/Slide.touchGo",
             data={"touch_go": value},
         )
@@ -872,7 +863,6 @@ class GoSlideLocal:
             hostname,
             self._slide_passwd[hostname],
             self._slide_api[hostname],
-            "POST",
             "/rpc/Slide.Config.Motor",
             data={"maxcurrent": maxcurrent, "calib_current": calib_current},
         )
