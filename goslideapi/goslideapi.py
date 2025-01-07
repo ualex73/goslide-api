@@ -452,7 +452,7 @@ class GoSlideLocal:
             x = x.encode("utf-8")
         return hashlib.md5(x).hexdigest()
 
-    def _make_digest_auth(self, username, password, method, uri, my_auth):
+    def _make_digest_auth(self, username, password, uri, my_auth):
         nonce = re.findall(r'nonce="(.*?)"', my_auth)[0]
         realm = re.findall(r'realm="(.*?)"', my_auth)[0]
         qop = re.findall(r'qop="(.*?)"', my_auth)[0]
@@ -471,7 +471,7 @@ class GoSlideLocal:
         HA1 = self._md5_utf8(username + ":" + realm + ":" + password)
 
         # calculate HA2
-        HA2 = self._md5_utf8(method + ":" + uri)
+        HA2 = self._md5_utf8("POST:" + uri)
 
         if qop == "auth" or "auth" in qop.split(","):
             # calculate client response
