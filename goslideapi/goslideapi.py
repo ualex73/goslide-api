@@ -1,13 +1,18 @@
 """Python wrapper for Go Slide API."""
 
-import aiohttp
+from __future__ import annotations
+
 import asyncio
+from datetime import datetime, timezone
 import hashlib
 import json
 import logging
 import os
 import re
 import time
+from typing import Any
+
+import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,13 +51,13 @@ class GoSlideCloud:
 
     def __init__(
         self,
-        username,
-        password,
-        timeout=DEFAULT_TIMEOUT_CLOUD,
-        url=BASEURL,
-        authexception=True,
-        verify_ssl=True,
-    ):
+        username: str,
+        password: str,
+        timeout: int =DEFAULT_TIMEOUT_CLOUD,
+        url: str =BASEURL,
+        authexception: bool=True,
+        verify_ssl: bool =True,
+    ) -> None:
         """Create the object with required parameters."""
         self._username = username
         self._password = password
@@ -66,7 +71,7 @@ class GoSlideCloud:
         self._requestcount = 0
         self._verify_ssl = verify_ssl
 
-    async def _dorequest(self, reqtype, urlsuffix, data=None):
+    async def _dorequest(self, reqtype: str, urlsuffix: str, data: str | None = None) -> dict | None:
         """HTTPS request handler."""
 
         # Increment request counter for logging purpose
@@ -162,11 +167,11 @@ class GoSlideCloud:
             aiohttp.client_exceptions.ClientConnectionError,
             aiohttp.client_exceptions.ClientConnectorError,
         ) as err:
-            raise ClientConnectionError(str(err)) from None
+            raise ClientConnectionError(str(err)) from err
         except asyncio.TimeoutError as err:
-            raise ClientTimeoutError("Connection Timeout") from None
+            raise ClientTimeoutError("Connection Timeout") from err
 
-    async def _request(self, reqtype, urlsuffix, data=None):
+    async def _request(self, reqtype: str, urlsuffix: str, data: str = None) -> dict | None:
         """Retry authentication around dorequest."""
         resp = await self._dorequest(reqtype, urlsuffix, data)
 
@@ -181,11 +186,9 @@ class GoSlideCloud:
 
         return resp
 
-    async def _checkauth(self):
+    async def _checkauth(self) -> bool:
         """Check if we are authenticated."""
         if self._authenticated:
-            from datetime import datetime, timezone
-
             if self._expiretoken is not None:
                 diff = self._expiretoken - datetime.now(timezone.utc)
 
@@ -203,9 +206,8 @@ class GoSlideCloud:
 
         return await self.login()
 
-    async def login(self):
+    async def login(self) -> bool:
         """Login to the Cloud API and retrieve a token."""
-        from datetime import datetime
 
         self._authenticated = False
         self._accesstoken = ""
@@ -236,7 +238,7 @@ class GoSlideCloud:
 
         return self._authenticated
 
-    async def logout(self):
+    async def logout(self) -> bool:
         """Logout of the Cloud API."""
         resp = False
 
@@ -250,7 +252,7 @@ class GoSlideCloud:
 
         return resp
 
-    async def slides_overview(self):
+    async def slides_overview(self) -> list[dict[str, Any]] | None:
         """Retrieve the slides overview list."""
         # {
         #   "slides": [
@@ -298,7 +300,7 @@ class GoSlideCloud:
         _LOGGER.error("Missing key 'slides' in JSON=%s", json.dumps(result))
         return None
 
-    async def slide_info(self, slideid):
+    async def slide_info(self, slideid: int) -> dict[str, Any] | None:
         """Retrieve the slide info."""
         # The format is:
         # {
@@ -325,7 +327,7 @@ class GoSlideCloud:
         _LOGGER.error("Missing key 'data' in JSON=%s", json.dumps(result))
         return None
 
-    async def slide_config(self, slideid):
+    async def slide_config(self, slideid: int) -> dict[str, Any] | None:
         """Retrieve the slide configuration."""
         # The format is:
         # {
@@ -342,7 +344,7 @@ class GoSlideCloud:
         _LOGGER.error("Missing key 'data' in JSON=%s", json.dumps(result))
         return None
 
-    async def slide_get_position(self, slideid):
+    async def slide_get_position(self, slideid: int) -> float | None:
         """Retrieve the slide position."""
         result = await self.slide_info(slideid)
         if result:
@@ -354,13 +356,8 @@ class GoSlideCloud:
 
         return None
 
-    async def slide_set_position(self, slideid, posin):
+    async def slide_set_position(self, slideid: int, pos: float) -> bool:
         """Set the slide position, only 0.0 - 1.0 is allowed."""
-        try:
-            pos = float(posin)
-        except ValueError:
-            _LOGGER.error("SlideSetPosition: '%s' has to be numeric", posin)
-            return False
 
         if pos < 0 or pos > 1:
             _LOGGER.error("SlideSetPosition: '%s' has to be between 0.0-1.0", pos)
@@ -374,7 +371,7 @@ class GoSlideCloud:
         )
         return bool(resp)
 
-    async def slide_open(self, slideid):
+    async def slide_open(self, slideid: int) -> bool:
         """Open a slide."""
         if not await self._checkauth():
             return False
@@ -384,7 +381,7 @@ class GoSlideCloud:
         )
         return bool(resp)
 
-    async def slide_close(self, slideid):
+    async def slide_close(self, slideid: int) -> bool:
         """Close a slide."""
         if not await self._checkauth():
             return False
@@ -394,7 +391,7 @@ class GoSlideCloud:
         )
         return bool(resp)
 
-    async def slide_stop(self, slideid):
+    async def slide_stop(self, slideid: int) -> bool:
         """Stop a slide."""
         if not await self._checkauth():
             return False
@@ -402,7 +399,7 @@ class GoSlideCloud:
         resp = await self._request("POST", "slide/{}/stop".format(slideid))
         return bool(resp)
 
-    async def slide_calibrate(self, slideid):
+    async def slide_calibrate(self, slideid: int) -> bool:
         """Calibrate a slide."""
         if not await self._checkauth():
             return False
@@ -410,7 +407,7 @@ class GoSlideCloud:
         resp = await self._request("POST", "slide/{}/calibrate".format(slideid))
         return bool(resp)
 
-    async def household_get(self):
+    async def household_get(self) -> dict | bool | None:
         """Return household information."""
         if not await self._checkauth():
             return False
@@ -418,7 +415,7 @@ class GoSlideCloud:
         resp = await self._request("GET", "households")
         return resp
 
-    async def household_set(self, name, address, lat, lon):
+    async def household_set(self, name: str, address: str, lat: str, lon: str) -> bool:
         """Set household information."""
         if not await self._checkauth():
             return False
@@ -434,7 +431,7 @@ class GoSlideCloud:
 class GoSlideLocal:
     """API Wrapper for the Go Slide devices, local connectivity."""
 
-    def __init__(self, timeout=DEFAULT_TIMEOUT_LOCAL, authexception=True):
+    def __init__(self, timeout: int = DEFAULT_TIMEOUT_LOCAL, authexception: bool = True):
         """Create the object with required parameters."""
         self._timeout = timeout
         self._authexception = authexception
@@ -443,12 +440,12 @@ class GoSlideLocal:
         self._slide_passwd = {}
         self._slide_api = {}
 
-    def _md5_utf8(self, x):
+    def _md5_utf8(self, x) -> str:
         if isinstance(x, str):
             x = x.encode("utf-8")
         return hashlib.md5(x).hexdigest()
 
-    def _make_digest_auth(self, username, password, method, uri, my_auth):
+    def _make_digest_auth(self, username: str, password: str, method: str, uri: str, my_auth: str) -> str:
         nonce = re.findall(r'nonce="(.*?)"', my_auth)[0]
         realm = re.findall(r'realm="(.*?)"', my_auth)[0]
         qop = re.findall(r'qop="(.*?)"', my_auth)[0]
@@ -483,7 +480,7 @@ class GoSlideLocal:
             username, realm, nonce, uri, nc, cnonce, response
         )
 
-    async def _dorequest(self, reqtype, url, digestauth=None, data=None):
+    async def _dorequest(self, reqtype, url: str, digestauth: str | None = None, data: str | None = None) -> tuple[int, dict[str,Any] | None]:
         """HTTP request handler."""
 
         # Increment request counter for logging purpose
@@ -577,7 +574,7 @@ class GoSlideLocal:
         except asyncio.TimeoutError as err:
             raise ClientTimeoutError("Connection Timeout") from None
 
-    async def _request(self, hostname, password, apiversion, reqtype, uri, data=None):
+    async def _request(self, hostname: str, password: str, apiversion: str, reqtype: str, uri: str, data: str | None = None) -> dict[str,Any] | None:
         """Digest authentication using dorequest."""
 
         # Local API uses digest authentication:
@@ -650,12 +647,12 @@ class GoSlideLocal:
 
         return None
 
-    async def slide_add(self, hostname, password, api=2):
+    async def slide_add(self, hostname: str, password: str = "", api=2) -> None:
         """Add slide to internal table, then you can use the local API."""
         self._slide_passwd[hostname] = password
         self._slide_api[hostname] = api
 
-    async def slide_del(self, hostname):
+    async def slide_del(self, hostname: str) -> None:
         """Delete slide from internal table."""
         if hostname in self._slide_passwd:
             del self._slide_passwd[hostname]
@@ -664,11 +661,11 @@ class GoSlideLocal:
         else:
             _LOGGER.error("Tried to delete none-existing '%s' from list", hostname)
 
-    async def slide_list(self):
+    async def slide_list(self) -> list[str]:
         """List all registered slides."""
         return list(self._slide_passwd.keys())
 
-    async def _slide_exist(self, hostname):
+    async def _slide_exist(self, hostname: str)-> bool:
         """Function to check if slide exist in internal table."""
         if hostname in self._slide_passwd:
             return True
@@ -679,7 +676,7 @@ class GoSlideLocal:
             )
             return False
 
-    async def slide_info(self, hostname):
+    async def slide_info(self, hostname: str) -> dict[str, Any] | None:
         """Retrieve the slide info."""
         # The format is:
         # {
@@ -707,7 +704,7 @@ class GoSlideLocal:
 
         return result
 
-    async def slide_get_position(self, hostname):
+    async def slide_get_position(self, hostname: str) -> float | None:
         """Retrieve the slide position."""
         result = await self.slide_info(hostname)
         if result:
@@ -719,13 +716,8 @@ class GoSlideLocal:
 
         return None
 
-    async def slide_set_position(self, hostname, posin):
+    async def slide_set_position(self, hostname: str, pos: float) -> bool:
         """Set the slide position, only 0.0 - 1.0 is allowed."""
-        try:
-            pos = float(posin)
-        except ValueError:
-            _LOGGER.error("SlideSetPosition: '%s' has to be numeric", posin)
-            return False
 
         if pos < 0 or pos > 1:
             _LOGGER.error("SlideSetPosition: '%s' has to be between 0.0-1.0", pos)
@@ -744,7 +736,7 @@ class GoSlideLocal:
         )
         return bool(resp)
 
-    async def slide_open(self, hostname):
+    async def slide_open(self, hostname: str) -> bool:
         """Open a slide."""
         if not await self._slide_exist(hostname):
             return False
@@ -759,7 +751,7 @@ class GoSlideLocal:
         )
         return bool(resp)
 
-    async def slide_close(self, hostname):
+    async def slide_close(self, hostname: str) -> bool:
         """Close a slide."""
         if not await self._slide_exist(hostname):
             return False
@@ -774,7 +766,7 @@ class GoSlideLocal:
         )
         return bool(resp)
 
-    async def slide_stop(self, hostname):
+    async def slide_stop(self, hostname: str) -> bool:
         """Stop a slide."""
         if not await self._slide_exist(hostname):
             return False
@@ -788,7 +780,7 @@ class GoSlideLocal:
         )
         return bool(resp)
 
-    async def slide_calibrate(self, hostname):
+    async def slide_calibrate(self, hostname: str) -> bool:
         """Calibrate a slide."""
         if not await self._slide_exist(hostname):
             return False
@@ -802,7 +794,7 @@ class GoSlideLocal:
         )
         return bool(resp)
 
-    async def slide_configwifi(self, hostname, ssid, password):
+    async def slide_configwifi(self, hostname: str, ssid: str, password: str) -> bool:
         """Configure slide wifi."""
         if not await self._slide_exist(hostname):
             return False
@@ -817,7 +809,7 @@ class GoSlideLocal:
         )
         return bool(resp)
 
-    async def slide_get_touchgo(self, hostname):
+    async def slide_get_touchgo(self, hostname) -> bool:
         """Retrieve the slide TouchGo setting."""
         result = await self.slide_info(hostname)
         if result:
@@ -827,9 +819,9 @@ class GoSlideLocal:
                 "SlideGetTouchGo: Missing key 'touch_go' in JSON=%s", json.dumps(result)
             )
 
-        return None
+        return False
 
-    async def slide_set_touchgo(self, hostname, value):
+    async def slide_set_touchgo(self, hostname: str, value: bool) -> bool:
         """Change Touch-Go of a slide."""
         if not await self._slide_exist(hostname):
             return False
@@ -844,7 +836,7 @@ class GoSlideLocal:
         )
         return bool(resp)
 
-    async def slide_set_motor_strength(self, hostname, maxcurrent, calib_current):
+    async def slide_set_motor_strength(self, hostname: str, maxcurrent: int, calib_current: int) -> bool:
         """Change Motor Strength a slide."""
         if not await self._slide_exist(hostname):
             return False
